@@ -1,4 +1,4 @@
-name: Foodgram CI Workflow
+name: Foodgram Workflow
 
 on:
   push:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:13.10
+        image: postgres:14
         env:
           POSTGRES_USER: django_user
           POSTGRES_PASSWORD: django_password
@@ -30,7 +30,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.12'
 
       - name: Install dependencies
         run: |
@@ -45,9 +45,11 @@ jobs:
           POSTGRES_DB: django_db
           DB_HOST: 127.0.0.1
           DB_PORT: 5432
+          DB_NAME: django_db
         run: |
           python -m ruff check backend/
           cd backend/
+          python manage.py migrate
           python manage.py test
 
   build_and_push_backend:
@@ -97,7 +99,7 @@ jobs:
           context: ./frontend/
           push: true
           tags: aganesov/foodgram-frontend:latest
-          
+
   send_telegram:
     runs-on: ubuntu-latest
     needs:
