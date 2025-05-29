@@ -3,7 +3,7 @@ services:
     # image: aganesov/foodgram-frontend:latest
     build: ../frontend
     volumes:
-      - ../frontend/build:/app/result_build/
+      - ../frontend/:/app/result_build/
 
   db:
     image: postgres:14
