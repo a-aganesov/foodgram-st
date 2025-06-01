@@ -16,7 +16,7 @@ class RecipeFilter(django_filters.FilterSet):
         if user.is_anonymous:
             return queryset.none()
 
-        if value in ("1", "true", "yes"):
+        if value == "1":
             return queryset.filter(favorited_by__user=user).distinct()
 
         return queryset
@@ -26,7 +26,7 @@ class RecipeFilter(django_filters.FilterSet):
         if user.is_anonymous:
             return queryset.none()
 
-        if value in ("1", "true", "yes"):
+        if value == "1":
             qs = queryset.filter(in_shopping_carts__user=user).distinct()
             return qs
 

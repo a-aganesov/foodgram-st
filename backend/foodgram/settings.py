@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "kitchen",
     "core",
     "users",
+    "api",
 ]
 
 MIDDLEWARE = [

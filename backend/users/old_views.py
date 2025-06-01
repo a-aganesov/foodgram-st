@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
 from django.contrib.auth import get_user_model
 from users.models import Follow
-from users.serializers import SubscriptionSerializer, SetPasswordSerializer
+from api.serializers import SubscriptionSerializer, SetPasswordSerializer
 from core.serializers import UserSerializer, UserCreateSerializer
 
 User = get_user_model()

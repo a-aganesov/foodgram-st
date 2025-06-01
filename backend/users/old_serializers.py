@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import password_validation
 from users.models import Follow, User
-from kitchen.serializers import SubscriptionRecipeSerializer
+from api.serializers import SubscriptionRecipeSerializer
 
 
 class SetPasswordSerializer(serializers.Serializer):
