@@ -28,7 +28,6 @@ from api.serializers import (
 )
 from api.permissions import IsAuthorOrReadOnly
 from api.filters import RecipeFilter
-from api.pagination import PageNumberPagination
 from http import HTTPStatus
 
 
