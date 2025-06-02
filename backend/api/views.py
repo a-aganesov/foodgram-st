@@ -1,6 +1,7 @@
 from django.db.models import Sum
 from django.http import HttpResponse
-from rest_framework import viewsets, permissions, status
+from django.urls import reverse
+from rest_framework import viewsets, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
@@ -20,12 +21,15 @@ from api.serializers import (
     IngredientSerializer,
     RecipeActionSerializer,
     SubscriptionSerializer,
-    SetPasswordSerializer
+    SetPasswordSerializer,
+    UserSerializer,
+    UserCreateSerializer,
+    FollowCreateSerializer,
 )
 from api.permissions import IsAuthorOrReadOnly
 from api.filters import RecipeFilter
-from core.pagination import PageNumberPagination
-from core.serializers import UserSerializer, UserCreateSerializer
+from api.pagination import PageNumberPagination
+from http import HTTPStatus
 
 
 User = get_user_model()
@@ -78,20 +82,24 @@ class RecipeViewSet(viewsets.ModelViewSet):
                 user=user, recipe=recipe
             )
             if not created:
-                return Response({"detail": "Уже добавлено"}, status=400)
+                return Response(
+                    {"detail": "Уже добавлено"}, status=HTTPStatus.BAD_REQUEST
+                )
 
             serializer = RecipeActionSerializer(
                 recipe, context={"request": self.request}
             )
-            return Response(serializer.data, status=201)
+            return Response(serializer.data, status=HTTPStatus.CREATED)
 
         deleted_count, _ = model.objects.filter(
             user=user, recipe=recipe
         ).delete()
         if deleted_count == 0:
-            return Response({"detail": "Не найдено"}, status=400)
+            return Response(
+                {"detail": "Не найдено"}, status=HTTPStatus.BAD_REQUEST
+            )
 
-        return Response(status=204)
+        return Response(status=HTTPStatus.NO_CONTENT)
 
     @action(
         detail=False,
@@ -109,8 +117,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
         )
 
         lines = [
-            f"{item['ingredient__name']} \
-                ({item['ingredient__measurement_unit']}) — {item['total']}"
+            f"{item['ingredient__name']} ({item['ingredient__measurement_unit']}) — {item['total']}"
             for item in ingredients
         ]
         content = "\n".join(lines)
@@ -129,7 +136,8 @@ class RecipeViewSet(viewsets.ModelViewSet):
 
 def redirect_short_link(request, slug):
     recipe = get_object_or_404(Recipe, short_uuid=slug)
-    return redirect(f"/recipes/{recipe.id}/")
+    url = reverse("recipes-detail", args=[recipe.id])
+    return redirect(url)
 
 
 class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
@@ -145,67 +153,67 @@ class IngredientViewSet(viewsets.ReadOnlyModelViewSet):
         return self.queryset
 
 
-class SubscribeViewSet(viewsets.ViewSet):
-    permission_classes = [permissions.IsAuthenticated]
+# class SubscribeViewSet(viewsets.ViewSet):
+#     permission_classes = [permissions.IsAuthenticated]
 
-    @action(detail=False, methods=["get"])
-    def subscriptions(self, request):
-        user = request.user
-        follows = Follow.objects.filter(user=user).select_related("author")
-        authors = [follow.author for follow in follows]
-        page = self.paginate_queryset(authors)
-        serializer = SubscriptionSerializer(
-            page, many=True, context={"request": request}
-        )
-        return self.get_paginated_response(serializer.data)
+#     @action(detail=False, methods=["get"])
+#     def subscriptions(self, request):
+#         user = request.user
+#         follows = user.follower.select_related("author")
+#         authors = [follow.author for follow in follows]
+#         page = self.paginate_queryset(authors)
+#         serializer = SubscriptionSerializer(
+#             page, many=True, context={"request": request}
+#         )
+#         return self.get_paginated_response(serializer.data)
 
-    @action(detail=True, methods=["post"], url_path="subscribe")
-    def subscribe(self, request, pk=None):
-        user = request.user
-        try:
-            author = User.objects.get(pk=pk)
-        except User.DoesNotExist:
-            return Response({"detail": "Пользователь не найден"}, status=404)
+#     @action(detail=True, methods=["post"], url_path="subscribe")
+#     def subscribe(self, request, pk=None):
+#         author = get_object_or_404(User, pk=pk)
+#         data = {
+#             "user": request.user.id,
+#             "author": author.id,
+#         }
+#         serializer = FollowCreateSerializer(
+#             data=data, context={"request": request}
+#         )
+#         serializer.is_valid(raise_exception=True)
+#         serializer.save()
+#         response_serializer = SubscriptionSerializer(
+#             author, context={"request": request}
+#         )
+#         return Response(response_serializer.data, status=HTTPStatus.CREATED)
 
-        if user == author:
-            return Response(
-                {"detail": "Нельзя подписаться на себя"}, status=400
-            )
+#     @subscribe.mapping.delete
+#     def unsubscribe(self, request, pk=None):
+#         user = request.user
+#         try:
+#             author = User.objects.get(pk=pk)
+#         except User.DoesNotExist:
+#             return Response(
+#                 {"detail": "Пользователь не найден"},
+#                 status=HTTPStatus.NOT_FOUND,
+#             )
 
-        if Follow.objects.filter(user=user, author=author).exists():
-            return Response({"detail": "Уже подписан"}, status=400)
+#         follow = user.follower.filter(author=author).first()
+#         if not follow:
+#             return Response(
+#                 {"detail": "Нет подписки"}, status=HTTPStatus.BAD_REQUEST
+#             )
 
-        Follow.objects.create(user=user, author=author)
-        serializer = SubscriptionSerializer(
-            author, context={"request": request}
-        )
-        return Response(serializer.data, status=201)
+#         follow.delete()
+#         return Response(status=HTTPStatus.NO_CONTENT)
 
-    @subscribe.mapping.delete
-    def unsubscribe(self, request, pk=None):
-        user = request.user
-        try:
-            author = User.objects.get(pk=pk)
-        except User.DoesNotExist:
-            return Response({"detail": "Пользователь не найден"}, status=404)
+#     def paginate_queryset(self, queryset):
 
-        follow = Follow.objects.filter(user=user, author=author).first()
-        if not follow:
-            return Response({"detail": "Нет подписки"}, status=400)
+#         paginator = PageNumberPagination()
+#         paginator.page_size = 6
+#         return paginator.paginate_queryset(queryset, self.request, view=self)
 
-        follow.delete()
-        return Response(status=204)
+#     def get_paginated_response(self, data):
 
-    def paginate_queryset(self, queryset):
-
-        paginator = PageNumberPagination()
-        paginator.page_size = 6
-        return paginator.paginate_queryset(queryset, self.request, view=self)
-
-    def get_paginated_response(self, data):
-
-        paginator = PageNumberPagination()
-        return paginator.get_paginated_response(data)
+#         paginator = PageNumberPagination()
+#         return paginator.get_paginated_response(data)
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -246,7 +254,7 @@ class UserViewSet(viewsets.ModelViewSet):
             if "avatar" not in request.data or not request.data["avatar"]:
                 return Response(
                     {"avatar": "Это поле обязательно."},
-                    status=status.HTTP_400_BAD_REQUEST,
+                    status=HTTPStatus.BAD_REQUEST,
                 )
             serializer = UserSerializer(
                 user,
@@ -264,7 +272,7 @@ class UserViewSet(viewsets.ModelViewSet):
             user.avatar = None
             user.save()
             return Response(
-                {"detail": "Аватар удалён."}, status=status.HTTP_204_NO_CONTENT
+                {"detail": "Аватар удалён."}, status=HTTPStatus.NO_CONTENT
             )
 
     @action(
@@ -279,7 +287,7 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         request.user.set_password(serializer.validated_data["new_password"])
         request.user.save()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(status=HTTPStatus.NO_CONTENT)
 
     @action(
         detail=False,
@@ -305,29 +313,33 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(
         detail=True,
         methods=["post"],
+        url_path="subscribe",
         permission_classes=[permissions.IsAuthenticated],
     )
     def subscribe(self, request, pk=None):
-        author = self.get_object()
-        user = request.user
-        if user == author:
-            return Response(
-                {"detail": "Нельзя подписаться на самого себя"}, status=400
-            )
-        if Follow.objects.filter(user=user, author=author).exists():
-            return Response({"detail": "Вы уже подписаны"}, status=400)
-        Follow.objects.create(user=user, author=author)
-        serializer = SubscriptionSerializer(
+        author = get_object_or_404(User, pk=pk)
+        data = {
+            "user": request.user.id,
+            "author": author.id,
+        }
+        serializer = FollowCreateSerializer(
+            data=data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        response_serializer = SubscriptionSerializer(
             author, context={"request": request}
         )
-        return Response(serializer.data, status=201)
+        return Response(response_serializer.data, status=HTTPStatus.CREATED)
 
     @subscribe.mapping.delete
     def unsubscribe(self, request, pk=None):
-        author = self.get_object()
+        author = author = get_object_or_404(User, pk=pk)
         user = request.user
-        follow = Follow.objects.filter(user=user, author=author).first()
+        follow = user.follower.filter(author=author).first()
         if not follow:
-            return Response({"detail": "Вы не подписаны"}, status=400)
+            return Response(
+                {"detail": "Вы не подписаны"}, status=HTTPStatus.BAD_REQUEST
+            )
         follow.delete()
-        return Response(status=204)
+        return Response(status=HTTPStatus.NO_CONTENT)

@@ -1,9 +1,56 @@
 from rest_framework import serializers
 from django.contrib.auth import password_validation
+from django.core.validators import MinValueValidator, MaxValueValidator
 from users.models import Follow, User
-from core.fields import Base64ImageField
+from api.fields import Base64ImageField
 from kitchen.models import Ingredient, Recipe, RecipeIngredient
-from core.serializers import UserSerializer
+from djoser.serializers import UserSerializer as BaseUserSerializer
+from djoser.serializers import UserCreateSerializer as BaseUserCreateSerializer
+from core.constants import MIN_INGREDIENT_AMOUNT, MAX_INGREDIENT_AMOUNT, MIN_COOKING_TIME, MAX_COOKING_TIME
+
+
+class UserSerializer(BaseUserSerializer):
+    avatar = Base64ImageField(required=False, allow_null=True)
+    is_subscribed = serializers.SerializerMethodField()
+
+    class Meta(BaseUserSerializer.Meta):
+        model = User
+        fields = (
+            "id",
+            "email",
+            "username",
+            "first_name",
+            "last_name",
+            "avatar",
+            "is_subscribed",
+        )
+
+    def get_is_subscribed(self, obj):
+        request = self.context["request"]
+        user = request.user
+        if not user.is_authenticated:
+            return False
+        return obj.following.filter(user=user).exists()
+
+
+class UserCreateSerializer(BaseUserCreateSerializer):
+    first_name = serializers.CharField(
+        required=True, max_length=150, allow_blank=False
+    )
+    last_name = serializers.CharField(
+        required=True, max_length=150, allow_blank=False
+    )
+
+    class Meta(BaseUserCreateSerializer.Meta):
+        model = User
+        fields = (
+            "id",
+            "email",
+            "username",
+            "first_name",
+            "last_name",
+            "password",
+        )
 
 
 class IngredientSerializer(serializers.ModelSerializer):
@@ -19,6 +66,19 @@ class IngredientAmountSerializer(serializers.ModelSerializer):
     name = serializers.ReadOnlyField(source="ingredient.name")
     measurement_unit = serializers.ReadOnlyField(
         source="ingredient.measurement_unit"
+    )
+    amount = serializers.IntegerField(
+        validators=[
+            MinValueValidator(
+                MIN_INGREDIENT_AMOUNT,
+                message=f"Минимальное количество — {MIN_INGREDIENT_AMOUNT}",
+            ),
+            MaxValueValidator(
+                MAX_INGREDIENT_AMOUNT,
+                message=f"Максимальное количество — {MAX_INGREDIENT_AMOUNT}",
+            ),
+        ],
+        help_text=f"Количество (от {MIN_INGREDIENT_AMOUNT} до {MAX_INGREDIENT_AMOUNT})",
     )
 
     class Meta:
@@ -65,6 +125,19 @@ class RecipeReadSerializer(serializers.ModelSerializer):
 class RecipeWriteSerializer(serializers.ModelSerializer):
     ingredients = IngredientAmountSerializer(many=True)
     image = Base64ImageField()
+    cooking_time = serializers.IntegerField(
+        validators=[
+            MinValueValidator(
+                MIN_INGREDIENT_AMOUNT,
+                message=f"Минимальное время — {MIN_COOKING_TIME}",
+            ),
+            MaxValueValidator(
+                MAX_INGREDIENT_AMOUNT,
+                message=f"Максимальное время — {MAX_COOKING_TIME}",
+            ),
+        ],
+        help_text=f"Время (от {MIN_COOKING_TIME} до {MAX_COOKING_TIME})",
+    )
 
     class Meta:
         model = Recipe
@@ -203,7 +276,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request or request.user.is_anonymous:
             return False
-        return Follow.objects.filter(user=request.user, author=obj).exists()
+        return request.user.follower.filter(author=obj).exists()
 
     def get_recipes(self, obj):
         request = self.context.get("request")
@@ -227,3 +300,29 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         if obj.avatar and hasattr(obj.avatar, "url"):
             return request.build_absolute_uri(obj.avatar.url)
         return None
+
+
+class FollowCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Follow
+        fields = ("user", "author")
+
+    def validate(self, data):
+        request_user = self.context["request"].user
+        author = data["author"]
+
+        if request_user.id != data["user"].id:
+            raise serializers.ValidationError(
+                "Неверный пользователь в запросе"
+            )
+
+        if request_user == author:
+            raise serializers.ValidationError("Нельзя подписаться на себя")
+
+        if request_user.follower.filter(author=author).exists():
+            raise serializers.ValidationError("Уже подписан")
+
+        return data
+
+    def create(self, validated_data):
+        return Follow.objects.create(**validated_data)
